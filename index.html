@@ -7,6 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <style>
 :root{
   --paper:#f6f3ec; --paper-2:#efeade; --ink:#20261f; --ink-soft:#5c6459;
@@ -300,6 +303,7 @@ footer{border-top:1px solid var(--line); padding:26px 0; text-align:center; colo
           <li data-t="4"><span class="dot"></span>Preserving formatting</li>
           <li data-t="5"><span class="dot"></span>Finalizing file</li>
         </ul>
+        <div id="procError" style="display:none; margin-top:18px"></div>
       </div>
 
       <!-- Step 6: Done -->
@@ -362,7 +366,103 @@ footer{border-top:1px solid var(--line); padding:26px 0; text-align:center; colo
 
 <script>
 const LANGS = ["English","Hindi","Urdu","Arabic","Bengali","Marathi","Telugu","Tamil","Gujarati","Kannada","Malayalam","Punjabi","Spanish","French","German","Portuguese","Italian","Dutch","Russian","Chinese","Japanese","Korean","Turkish","Vietnamese","Thai","Indonesian","Malay","Polish","Ukrainian","Greek","Hebrew","Persian"];
-let state = { file:null, isExcel:false, pages:0, target:null, sheetNames:false };
+let state = { file:null, isExcel:false, pages:0, target:null, sheetNames:false, output:null };
+let sampleCap=null, downloadsCap=null;
+const capReady=(async()=>{
+  try{ if(window.claude){ sampleCap=await window.claude.use('sample'); downloadsCap=await window.claude.use('downloads'); } }catch(e){}
+})();
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const NON_LATIN=new Set(["Hindi","Urdu","Arabic","Bengali","Marathi","Telugu","Tamil","Gujarati","Kannada","Malayalam","Punjabi","Russian","Chinese","Japanese","Korean","Thai","Hebrew","Persian","Greek","Ukrainian"]);
+function isTranslatable(s){
+  if(typeof s!=='string') return false;
+  const t=s.trim(); if(!t) return false;
+  if(/^https?:\/\//i.test(t)) return false;
+  if(/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(t)) return false;
+  if(/^[A-Za-z]:\\|^\//.test(t)) return false;
+  if(/^-?\d+([.,]\d+)?%?$/.test(t)) return false;
+  if(/^[A-Z]{1,3}\d{1,7}$/.test(t)) return false;
+  return /[a-zA-Z]{2,}/.test(t);
+}
+function chunk(a,n){const r=[];for(let i=0;i<a.length;i+=n)r.push(a.slice(i,i+n));return r;}
+async function translateBatch(list, target){
+  if(!list.length) return [];
+  const prompt=`Translate each string in this JSON array from English to ${target}. Keep the array the same length and order, one translation per input string. Leave numbers, codes, URLs or identifiers unchanged if any appear. Reply with ONLY a JSON array of translated strings, nothing else.\n\n${JSON.stringify(list)}`;
+  const out=await sampleCap.json(prompt,{modelTier:'quick'});
+  return (Array.isArray(out) && out.length===list.length) ? out : list;
+}
+function wrapText(text, font, size, maxW){
+  const lines=[];
+  (text||'').split('\n').forEach(par=>{
+    const words=par.split(/\s+/).filter(Boolean); let cur='';
+    words.forEach(w=>{ const test=cur?cur+' '+w:w; if(font.widthOfTextAtSize(test,size)>maxW && cur){lines.push(cur);cur=w;} else cur=test; });
+    lines.push(cur);
+  });
+  return lines;
+}
+async function realTranslateExcel(onProgress){
+  const buf=await state.file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array',cellStyles:true,cellFormula:true,cellNF:true});
+  let cells=[];
+  wb.SheetNames.forEach(sn=>{ const ws=wb.Sheets[sn]; Object.keys(ws).forEach(addr=>{ if(addr[0]==='!')return; const c=ws[addr]; if(c && c.t==='s' && !c.f && isTranslatable(c.v)) cells.push({sn,addr,text:c.v}); }); });
+  const batches=chunk(cells.map(c=>c.text),40);
+  let translated=[];
+  for(let i=0;i<batches.length;i++){ translated=translated.concat(await translateBatch(batches[i],state.target)); onProgress(15+Math.round(((i+1)/Math.max(1,batches.length))*60)); }
+  cells.forEach((c,i)=>{ const ws=wb.Sheets[c.sn]; ws[c.addr].v=translated[i]??c.text; delete ws[c.addr].w; });
+  if(state.sheetNames){
+    const names=await translateBatch(wb.SheetNames,state.target);
+    const map={}; wb.SheetNames.forEach((n,i)=>map[n]=names[i]||n);
+    wb.SheetNames=wb.SheetNames.map(n=>map[n]);
+    const ns={}; Object.keys(wb.Sheets).forEach(k=>ns[map[k]||k]=wb.Sheets[k]); wb.Sheets=ns;
+  }
+  onProgress(85);
+  const out=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  onProgress(100);
+  return {blob:new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), ext:'.xlsx'};
+}
+async function realTranslatePdf(onProgress){
+  const buf=await state.file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const n=pdf.numPages, pagesText=[], sizes=[];
+  for(let p=1;p<=n;p++){
+    const page=await pdf.getPage(p); const vp=page.getViewport({scale:1}); sizes.push([vp.width,vp.height]);
+    const tc=await page.getTextContent(); let text='', lastY=null;
+    tc.items.forEach(it=>{ if(lastY!==null && Math.abs(it.transform[5]-lastY)>2) text+='\n'; text+=it.str+' '; lastY=it.transform[5]; });
+    pagesText.push(text.trim()); onProgress(8+Math.round((p/n)*12));
+  }
+  const batches=chunk(pagesText,3); let translatedPages=[];
+  for(let i=0;i<batches.length;i++){ translatedPages=translatedPages.concat(await translateBatch(batches[i],state.target)); onProgress(25+Math.round(((i+1)/Math.max(1,batches.length))*50)); }
+  onProgress(78);
+  if(NON_LATIN.has(state.target)){
+    const md=translatedPages.map((t,i)=>`--- Page ${i+1} ---\n${t}`).join('\n\n');
+    onProgress(100);
+    return {blob:new Blob([md],{type:'text/plain'}), ext:'.txt', fallback:true};
+  }
+  const {PDFDocument, StandardFonts}=PDFLib;
+  const outDoc=await PDFDocument.create();
+  const font=await outDoc.embedFont(StandardFonts.Helvetica);
+  for(let i=0;i<n;i++){
+    const [w,h]=sizes[i]; const pg=outDoc.addPage([w,h]);
+    const margin=48, size=10, maxW=w-margin*2;
+    const lines=wrapText(translatedPages[i]||'', font, size, maxW);
+    let y=h-margin;
+    lines.forEach(line=>{ if(y<margin) return; pg.drawText(line,{x:margin,y,size,font}); y-=size*1.4; });
+  }
+  onProgress(95);
+  const bytes=await outDoc.save();
+  onProgress(100);
+  return {blob:new Blob([bytes],{type:'application/pdf'}), ext:'.pdf'};
+}
+function translateErrCopy(e){
+  if(e && e.code==='not_granted') return "Translation wasn't allowed for this page. Reload and accept the prompt, then try again.";
+  if(e && e.code==='rate_limited') return "Too many requests right now — wait a moment and try again.";
+  if(e && e.code==='sampling_disabled') return "AI translation isn't available on this account.";
+  return "Something went wrong while translating your file. Your original file has not been modified.";
+}
+function showTranslateError(msg){
+  document.getElementById('procError').innerHTML=`<div class="warn-box">${msg}</div><div class="step-actions"><button class="btn btn-primary" id="retryBtn">Try again</button></div>`;
+  document.getElementById('procError').style.display='block';
+  document.getElementById('retryBtn').addEventListener('click',()=>{ document.getElementById('procError').style.display='none'; showPane(4); });
+}
 let history = [];
 try{ history = JSON.parse(localStorage.getItem('starsa_history')||'[]'); }catch(e){ history=[]; }
 
@@ -467,42 +567,60 @@ document.getElementById('toStep4').addEventListener('click',()=>{
 });
 
 // STEP 5: processing (simulated, async)
-document.getElementById('startTranslate').addEventListener('click',()=>{
+document.getElementById('startTranslate').addEventListener('click', async ()=>{
   showPane(5);
+  document.getElementById('procError').style.display='none';
   document.querySelectorAll('#taskList li').forEach(li=>li.classList.remove('done'));
-  document.getElementById('progFill').style.width='0%';
-  document.getElementById('progPct').textContent='0';
-  let pct=0, taskIdx=0;
-  const timer=setInterval(()=>{
-    pct += Math.random()*9+4;
-    if(pct>=100){ pct=100; clearInterval(timer); finishTranslate(); }
-    document.getElementById('progFill').style.width=pct+'%';
-    document.getElementById('progPct').textContent=Math.round(pct);
-    const nextTask=Math.min(5, Math.floor(pct/17));
-    while(taskIdx<=nextTask){ const li=document.querySelector(`#taskList li[data-t="${taskIdx}"]`); if(li) li.classList.add('done'); taskIdx++; }
-  }, 260);
+  const setProg=(p)=>{
+    document.getElementById('progFill').style.width=p+'%';
+    document.getElementById('progPct').textContent=p;
+    const idx=Math.min(5, Math.floor(p/17));
+    document.querySelectorAll('#taskList li').forEach((li,i)=>{ if(i<=idx) li.classList.add('done'); });
+  };
+  setProg(2);
+  await capReady;
+  if(!sampleCap){
+    showTranslateError("Live translation needs this page open inside Claude with AI access allowed for this artifact. Open the Starsa link in Claude and try again.");
+    return;
+  }
+  try{
+    const result = state.isExcel ? await realTranslateExcel(setProg) : await realTranslatePdf(setProg);
+    state.output = result;
+    finishTranslate();
+  }catch(e){
+    console.error(e);
+    showTranslateError(translateErrCopy(e));
+  }
 });
 
 function finishTranslate(){
-  const ext = state.isExcel ? state.file.name.slice(state.file.name.lastIndexOf('.')) : '.pdf';
   const base = state.file.name.replace(/\.[^.]+$/,'');
-  const outName = `${base}_${state.target}${ext}`;
+  const outName = `${base}_${state.target}${state.output.ext}`;
+  state.output.name = outName;
   document.getElementById('origChip').textContent='Original: '+state.file.name;
   document.getElementById('doneChip').textContent='Translated: '+outName;
   const qwarn=document.getElementById('qualityWarn'); qwarn.innerHTML='';
-  if(!state.isExcel && state.pages>60){
-    qwarn.innerHTML='<div class="warn-box">Some complex page layouts may shift slightly — everything else was verified against the original.</div>';
+  if(state.output.fallback){
+    qwarn.innerHTML='<div class="warn-box">This language needs a font this browser page can\'t embed for a real PDF, so you\'re getting the translated text as a plain file instead of a laid-out PDF.</div>';
+  } else if(!state.isExcel){
+    qwarn.innerHTML='<div class="warn-box">Text is translated and page order is preserved; exact original fonts, images and table layout are simplified in this rebuild.</div>';
   }
   const record={name:state.file.name,outName,type:state.isExcel?'Excel':'PDF',source:'English',target:state.target,units:state.isExcel?state.pages+' sheets':state.pages+' pages',status:'Completed',date:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
   history.unshift(record);
   try{ localStorage.setItem('starsa_history', JSON.stringify(history)); }catch(e){}
-  window._lastRecord=record;
   showPane(6);
 }
-document.getElementById('previewBtn').addEventListener('click',()=>alert('Preview: '+window._lastRecord.outName+' — structure matches original, ready to download.'));
-document.getElementById('downloadBtn').addEventListener('click',()=>{
-  const blob=new Blob([`Simulated translated file: ${window._lastRecord.outName}\nSource: ${window._lastRecord.name}\nTarget language: ${window._lastRecord.target}`], {type:'text/plain'});
-  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=window._lastRecord.outName+'.txt'; a.click(); URL.revokeObjectURL(url);
+document.getElementById('previewBtn').addEventListener('click',()=>{
+  const msg = state.isExcel ? 'Workbook translated — download to view it in Excel.' : (state.output.fallback ? 'Translated as plain text — open the file to read all pages.' : 'PDF rebuilt with translated text — download to view.');
+  alert('Preview: '+state.output.name+'\n\n'+msg);
+});
+document.getElementById('downloadBtn').addEventListener('click', async ()=>{
+  const {blob,name}=state.output;
+  await capReady;
+  if(downloadsCap){
+    try{ await downloadsCap.save({filename:name, data:blob}); return; }catch(e){ /* fall through to direct download */ }
+  }
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url);
 });
 document.getElementById('anotherBtn').addEventListener('click',()=>{
   state={file:null,isExcel:false,pages:0,target:null,sheetNames:false};

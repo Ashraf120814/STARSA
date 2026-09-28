@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Starsa — Translate documents, keep their structure</title>
+<!-- Standalone static frontend. Deploy anywhere (Vercel/Netlify/S3/your server) alongside starsa-backend. Set API_BASE_URL in the script below before deploying. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f6f3ec; --paper-2:#efeade; --ink:#20261f; --ink-soft:#5c6459;
+  --accent:#a8622f; --accent-2:#2f5d4f; --line:rgba(32,38,31,0.14);
+  --card:#ffffff; --ok:#2f5d4f; --err:#a8402f;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root:not([data-theme="light"]){
+  @media (prefers-color-scheme: dark){
+    --paper:#161915; --paper-2:#1d221c; --ink:#ece7da; --ink-soft:#a3ab9b;
+    --accent:#e08a52; --accent-2:#6fae97; --line:rgba(236,231,218,0.14); --card:#1f241d;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#161915; --paper-2:#1d221c; --ink:#ece7da; --ink-soft:#a3ab9b;
+  --accent:#e08a52; --accent-2:#6fae97; --line:rgba(236,231,218,0.14); --card:#1f241d;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:'Inter',system-ui,sans-serif; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.serif{font-family:'Fraunces',Georgia,serif;}
+a{color:inherit;}
+button{font-family:inherit;}
+.wrap{max-width:1080px; margin:0 auto; padding:0 24px;}
+/* NAV */
+header{
+  position:sticky; top:0; z-index:20; padding-top:env(safe-area-inset-top,0px);
+  background:color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);
+}
+nav{display:flex; align-items:center; justify-content:space-between; padding:16px 24px; max-width:1080px; margin:0 auto;}
+.brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:1.15rem;}
+.brand-mark{width:26px; height:26px; border-radius:7px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); flex-shrink:0;}
+.navlinks{display:flex; gap:22px; font-size:0.92rem; color:var(--ink-soft);}
+.navlinks a{cursor:pointer; padding:6px 2px; border-bottom:2px solid transparent;}
+.navlinks a.active,.navlinks a:hover{color:var(--ink); border-color:var(--accent);}
+.navright{display:flex; align-items:center; gap:12px;}
+.pill{font-size:0.72rem; padding:3px 9px; border-radius:99px; border:1px solid var(--line); color:var(--ink-soft);}
+.pill.dev{color:var(--accent-2); border-color:var(--accent-2);}
+.iconbtn{width:36px; height:36px; border-radius:9px; border:1px solid var(--line); background:var(--card); cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--ink);}
+.btn{display:inline-flex; align-items:center; gap:8px; padding:13px 22px; border-radius:11px; border:1px solid transparent; font-weight:600; font-size:0.95rem; cursor:pointer;}
+.btn-primary{background:var(--accent); color:#fff9f2;}
+.btn-primary:hover{filter:brightness(1.06);}
+.btn-ghost{background:transparent; border-color:var(--line); color:var(--ink);}
+.btn-ghost:hover{border-color:var(--ink-soft);}
+.btn:disabled{opacity:0.45; cursor:not-allowed;}
+section{padding:64px 0;}
+.view{display:none;}
+.view.active{display:block;}
+/* HERO */
+.hero{padding:76px 0 40px;}
+.hero-grid{display:grid; grid-template-columns:1.1fr 0.9fr; gap:56px; align-items:center;}
+.hero h1{font-size:clamp(2.1rem,4.6vw,3.3rem); font-weight:600; line-height:1.08; margin:0 0 18px;}
+.hero p{color:var(--ink-soft); font-size:1.08rem; max-width:46ch; margin:0 0 30px;}
+.cta-row{display:flex; gap:14px; flex-wrap:wrap;}
+.flow{margin-top:46px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:0.85rem; color:var(--ink-soft);}
+.flow span.step{color:var(--ink); font-weight:600;}
+.flow .arrow{color:var(--accent);}
+.hero-card{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:26px; box-shadow:0 20px 50px -30px rgba(0,0,0,0.35);}
+.doc-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); font-size:0.88rem;}
+.doc-row:last-child{border-bottom:none;}
+.doc-flag{width:30px; text-align:center; font-size:1.1rem;}
+.doc-bar{flex:1; height:6px; border-radius:99px; background:var(--paper-2); overflow:hidden;}
+.doc-bar > i{display:block; height:100%; background:var(--accent-2); border-radius:99px;}
+/* FEATURES */
+.features{display:grid; grid-template-columns:repeat(3,1fr); gap:18px;}
+.feature{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px;}
+.feature h3{font-size:1rem; margin:0 0 8px; font-weight:600;}
+.feature p{color:var(--ink-soft); font-size:0.9rem; margin:0;}
+.section-head{max-width:60ch; margin-bottom:34px;}
+.section-head h2{font-size:1.8rem; font-weight:600; margin:0 0 10px;}
+.section-head p{color:var(--ink-soft); margin:0;}
+/* TRANSLATE WORKSPACE */
+.steps-bar{display:flex; gap:6px; margin-bottom:34px;}
+.steps-bar i{flex:1; height:4px; border-radius:99px; background:var(--line);}
+.steps-bar i.done{background:var(--accent-2);}
+.steps-bar i.now{background:var(--accent);}
+.panel{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:36px; max-width:680px; margin:0 auto;}
+.dropzone{border:2px dashed var(--line); border-radius:14px; padding:48px 24px; text-align:center; cursor:pointer; transition:border-color .15s;}
+.dropzone.drag{border-color:var(--accent); background:color-mix(in srgb, var(--accent) 6%, transparent);}
+.dropzone .dz-icon{font-size:2rem; margin-bottom:10px;}
+.dropzone h3{margin:0 0 6px; font-size:1.05rem;}
+.dropzone p{color:var(--ink-soft); font-size:0.88rem; margin:0 0 4px;}
+.dropzone small{color:var(--ink-soft); font-size:0.76rem;}
+input[type=file]{display:none;}
+.limit-note{margin-top:16px; font-size:0.8rem; color:var(--ink-soft); text-align:center;}
+.file-meta{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:22px 0;}
+.meta-item{background:var(--paper-2); border-radius:10px; padding:12px 14px;}
+.meta-item .k{font-size:0.72rem; color:var(--ink-soft); margin-bottom:3px;}
+.meta-item .v{font-weight:600; font-size:0.94rem;}
+.lang-picker{position:relative;}
+.lang-search{width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--line); background:var(--paper-2); color:var(--ink); font-size:0.95rem;}
+.lang-search:focus{outline:2px solid var(--accent); outline-offset:1px;}
+.lang-list{max-height:230px; overflow-y:auto; margin-top:10px; border:1px solid var(--line); border-radius:10px;}
+.lang-opt{padding:11px 14px; font-size:0.92rem; cursor:pointer; border-bottom:1px solid var(--line); display:flex; justify-content:space-between;}
+.lang-opt:last-child{border-bottom:none;}
+.lang-opt:hover{background:var(--paper-2);}
+.lang-opt.selected{background:color-mix(in srgb, var(--accent) 12%, transparent); font-weight:600;}
+.pair-row{display:flex; align-items:center; justify-content:center; gap:16px; margin:20px 0 26px; font-size:1.05rem;}
+.pair-box{padding:12px 18px; border:1px solid var(--line); border-radius:10px; background:var(--paper-2); font-weight:600;}
+.progress-track{height:10px; background:var(--paper-2); border-radius:99px; overflow:hidden; margin:22px 0 18px;}
+.progress-fill{height:100%; width:0%; background:linear-gradient(90deg,var(--accent-2),var(--accent)); border-radius:99px; transition:width .25s;}
+.task-list{list-style:none; padding:0; margin:0; font-size:0.92rem;}
+.task-list li{display:flex; align-items:center; gap:10px; padding:7px 0; color:var(--ink-soft);}
+.task-list li.done{color:var(--ink);}
+.task-list .dot{width:18px; height:18px; border-radius:50%; border:1.5px solid var(--line); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:0.7rem;}
+.task-list li.done .dot{background:var(--ok); border-color:var(--ok); color:#fff;}
+.result-icon{width:56px; height:56px; border-radius:14px; background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin:0 auto 18px;}
+.file-compare{display:flex; align-items:center; justify-content:center; gap:14px; margin:20px 0 26px; flex-wrap:wrap;}
+.file-chip{padding:10px 16px; border:1px solid var(--line); border-radius:10px; font-size:0.88rem; background:var(--paper-2);}
+.step-actions{display:flex; justify-content:space-between; margin-top:26px; gap:12px; flex-wrap:wrap;}
+.warn-box{margin-top:18px; padding:12px 14px; border-radius:10px; border:1px solid color-mix(in srgb, var(--err) 40%, var(--line)); background:color-mix(in srgb, var(--err) 8%, transparent); font-size:0.85rem;}
+/* DASHBOARD */
+.cards4{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:38px;}
+.stat{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px;}
+.stat .num{font-size:1.6rem; font-weight:700; font-family:'Fraunces',serif;}
+.stat .lbl{font-size:0.8rem; color:var(--ink-soft); margin-top:2px;}
+table{width:100%; border-collapse:collapse; font-size:0.88rem;}
+th{text-align:left; color:var(--ink-soft); font-weight:600; font-size:0.76rem; text-transform:uppercase; letter-spacing:.03em; padding:10px 12px; border-bottom:1px solid var(--line);}
+td{padding:12px; border-bottom:1px solid var(--line);}
+tr:last-child td{border-bottom:none;}
+.status-tag{padding:3px 10px; border-radius:99px; font-size:0.76rem; background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok);}
+.tbl-wrap{overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:14px;}
+.dlink{color:var(--accent); font-weight:600; cursor:pointer;}
+.delbtn{color:var(--ink-soft); cursor:pointer; font-size:0.85rem;}
+.delbtn:hover{color:var(--err);}
+/* MODAL */
+.modal-bg{position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:50; padding:20px;}
+.modal-bg.show{display:flex;}
+.modal{background:var(--card); border-radius:16px; padding:28px; max-width:360px; width:100%;}
+.modal h3{margin:0 0 6px;}
+.modal p{color:var(--ink-soft); font-size:0.88rem; margin:0 0 18px;}
+.check-row{display:flex; align-items:center; gap:10px; margin:14px 0; font-size:0.9rem;}
+footer{border-top:1px solid var(--line); padding:26px 0; text-align:center; color:var(--ink-soft); font-size:0.82rem;}
+@media (max-width:820px){
+  .hero-grid{grid-template-columns:1fr;}
+  .features{grid-template-columns:1fr;}
+  .cards4{grid-template-columns:1fr 1fr;}
+  .navlinks{display:none;}
+  .file-meta{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <nav>
+    <div class="brand"><span class="brand-mark"></span>Starsa</div>
+    <div class="navlinks">
+      <a data-go="home" class="active">Home</a>
+      <a data-go="translate">Translate</a>
+      <a data-go="dashboard">Dashboard</a>
+    </div>
+    <div class="navright">
+      <span class="pill" id="devPill" style="display:none">Developer</span>
+      <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">◐</button>
+      <button class="iconbtn" id="acctBtn" aria-label="Account">☺</button>
+    </div>
+  </nav>
+</header>
+
+<!-- HOME -->
+<div class="view active" id="view-home">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <h1>Translate your documents.<br>Keep their structure.</h1>
+        <p>Starsa translates PDFs and Excel files into your preferred language while preserving pages, tables, formatting, and data structure — nothing rearranged, nothing lost.</p>
+        <div class="cta-row">
+          <button class="btn btn-primary" data-go="translate">Start translating</button>
+          <button class="btn btn-ghost" data-scroll="how">See how it works</button>
+        </div>
+        <div class="flow">
+          <span class="step">Upload</span><span class="arrow">→</span>
+          <span class="step">Select language</span><span class="arrow">→</span>
+          <span class="step">Translate</span><span class="arrow">→</span>
+          <span class="step">Download</span>
+        </div>
+      </div>
+      <div class="hero-card">
+        <div class="doc-row"><span class="doc-flag">🇬🇧</span><span>Annual_Report.pdf</span></div>
+        <div class="doc-row"><span class="doc-flag">→</span><div class="doc-bar"><i style="width:100%"></i></div></div>
+        <div class="doc-row"><span class="doc-flag">🇮🇳</span><span>Annual_Report_Hindi.pdf — structure preserved</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Built for exact structure, not just text</h2>
+        <p>Every page, sheet, table and cell stays exactly where it started — only the language changes.</p>
+      </div>
+      <div class="features">
+        <div class="feature"><h3>PDF translation</h3><p>Translate documents while preserving page count, order, headings, tables and layout.</p></div>
+        <div class="feature"><h3>Excel translation</h3><p>Maintain rows, columns, sheets, formulas and formatting — only translatable text changes.</p></div>
+        <div class="feature"><h3>100-page limit</h3><p>Translate up to 100 PDF pages in a single request, clearly shown before you upload.</p></div>
+        <div class="feature"><h3>OCR support</h3><p>Scanned pages are read and translated, not skipped.</p></div>
+        <div class="feature"><h3>Structure preservation</h3><p>Cell references, URLs, formulas and IDs are left untouched by design.</p></div>
+        <div class="feature"><h3>Many languages</h3><p>A searchable list covering major world and Indian languages, extendable from the backend.</p></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- TRANSLATE WORKFLOW -->
+<div class="view" id="view-translate">
+  <section style="padding-top:44px">
+    <div class="wrap" style="max-width:680px">
+      <div class="steps-bar" id="stepsBar"></div>
+
+      <!-- Step 1: Upload -->
+      <div class="panel step-pane" id="pane-1">
+        <div class="dropzone" id="dropzone">
+          <div class="dz-icon">📄</div>
+          <h3>Drop your PDF or Excel file here</h3>
+          <p>or <span class="dlink" id="browseLink">browse files</span></p>
+          <small>Supports .pdf, .xlsx, .xls</small>
+        </div>
+        <input type="file" id="fileInput" accept=".pdf,.xlsx,.xls">
+        <p class="limit-note">Maximum 100 PDF pages per translation.</p>
+        <div id="uploadError"></div>
+      </div>
+
+      <!-- Step 2: Analyze -->
+      <div class="panel step-pane" id="pane-2" style="display:none">
+        <h3 style="margin-top:0">Analyzing your file</h3>
+        <div class="file-meta">
+          <div class="meta-item"><div class="k">File name</div><div class="v" id="m-name">—</div></div>
+          <div class="meta-item"><div class="k">File type</div><div class="v" id="m-type">—</div></div>
+          <div class="meta-item"><div class="k">Pages / sheets</div><div class="v" id="m-pages">—</div></div>
+          <div class="meta-item"><div class="k">File size</div><div class="v" id="m-size">—</div></div>
+          <div class="meta-item"><div class="k">Detected language</div><div class="v" id="m-lang">—</div></div>
+          <div class="meta-item"><div class="k">Eligibility</div><div class="v" id="m-eligible">—</div></div>
+        </div>
+        <div id="analyzeWarn"></div>
+        <div class="step-actions">
+          <button class="btn btn-ghost" data-back="1">Back</button>
+          <button class="btn btn-primary" id="toStep3">Continue</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Select language -->
+      <div class="panel step-pane" id="pane-3" style="display:none">
+        <h3 style="margin-top:0">Translate to</h3>
+        <div class="pair-row">
+          <div class="pair-box" id="srcLangDisplay">English</div>
+          <span class="arrow" style="color:var(--accent)">→</span>
+          <div class="pair-box" id="tgtLangDisplay">Select language</div>
+        </div>
+        <div class="lang-picker">
+          <input class="lang-search" id="langSearch" placeholder="🔍 Search language…" autocomplete="off">
+          <div class="lang-list" id="langList"></div>
+        </div>
+        <div class="check-row" id="sheetNameRow" style="display:none">
+          <input type="checkbox" id="translateSheetNames"><label for="translateSheetNames">Also translate sheet names</label>
+        </div>
+        <div class="step-actions">
+          <button class="btn btn-ghost" data-back="2">Back</button>
+          <button class="btn btn-primary" id="toStep4" disabled>Continue</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Confirm & translate -->
+      <div class="panel step-pane" id="pane-4" style="display:none">
+        <h3 style="margin-top:0">Ready to translate</h3>
+        <p style="color:var(--ink-soft); margin-top:0" id="confirmSummary"></p>
+        <p class="limit-note" id="pageCountNote" style="text-align:left"></p>
+        <div class="step-actions">
+          <button class="btn btn-ghost" data-back="3">Back</button>
+          <button class="btn btn-primary" id="startTranslate">Translate file →</button>
+        </div>
+      </div>
+
+      <!-- Step 5: Processing -->
+      <div class="panel step-pane" id="pane-5" style="display:none">
+        <h3 style="margin-top:0">Translation in progress…</h3>
+        <div class="progress-track"><div class="progress-fill" id="progFill"></div></div>
+        <p style="text-align:right; margin:0 0 14px; font-size:0.85rem; color:var(--ink-soft)"><span id="progPct">0</span>%</p>
+        <ul class="task-list" id="taskList">
+          <li data-t="0"><span class="dot"></span>Reading document</li>
+          <li data-t="1"><span class="dot"></span>Detecting text</li>
+          <li data-t="2"><span class="dot"></span>Translating content</li>
+          <li data-t="3"><span class="dot"></span>Rebuilding document</li>
+          <li data-t="4"><span class="dot"></span>Preserving formatting</li>
+          <li data-t="5"><span class="dot"></span>Finalizing file</li>
+        </ul>
+        <div id="procError" style="display:none; margin-top:18px"></div>
+      </div>
+
+      <!-- Step 6: Done -->
+      <div class="panel step-pane" id="pane-6" style="display:none">
+        <div class="result-icon">✓</div>
+        <h3 style="text-align:center; margin-top:0">Translation complete</h3>
+        <div class="file-compare">
+          <div class="file-chip" id="origChip">Original</div>
+          <span style="color:var(--accent)">→</span>
+          <div class="file-chip" id="doneChip">Translated</div>
+        </div>
+        <div id="qualityWarn"></div>
+        <div class="step-actions" style="justify-content:center; flex-wrap:wrap">
+          <button class="btn btn-ghost" id="previewBtn">Preview file</button>
+          <button class="btn btn-primary" id="downloadBtn">Download translated file</button>
+        </div>
+        <div style="text-align:center; margin-top:16px">
+          <span class="dlink" id="anotherBtn">Translate another file</span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- DASHBOARD -->
+<div class="view" id="view-dashboard">
+  <section style="padding-top:44px">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Dashboard</h2>
+        <p>Your translations, usage and history in one place.</p>
+      </div>
+      <div class="cards4">
+        <div class="stat"><div class="num" id="s-count">0</div><div class="lbl">Translations this month</div></div>
+        <div class="stat"><div class="num" id="s-pages">0</div><div class="lbl">Pages translated</div></div>
+        <div class="stat"><div class="num" id="s-files">0</div><div class="lbl">Files processed</div></div>
+        <div class="stat"><div class="num" id="s-remain">100</div><div class="lbl">Remaining page limit</div></div>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>File name</th><th>Type</th><th>Source</th><th>Target</th><th>Pages/Sheets</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="modal-bg" id="acctModal">
+  <div class="modal">
+    <h3>Account</h3>
+    <p>Signed in as <strong>you@starsa.app</strong> (demo session).</p>
+    <div class="check-row"><input type="checkbox" id="devToggle"><label for="devToggle">Enable developer access</label></div>
+    <p style="font-size:0.78rem">Developer access surfaces raw job metadata and processing steps for debugging — no billing or data impact.</p>
+    <div class="step-actions"><button class="btn btn-ghost" id="closeModal">Close</button></div>
+  </div>
+</div>
+
+<footer>Starsa — files are processed securely and deleted automatically after translation. <span class="dlink" data-go="translate">Privacy notice</span></footer>
+
+<script>
+const LANGS = ["English","Hindi","Urdu","Arabic","Bengali","Marathi","Telugu","Tamil","Gujarati","Kannada","Malayalam","Punjabi","Spanish","French","German","Portuguese","Italian","Dutch","Russian","Chinese","Japanese","Korean","Turkish","Vietnamese","Thai","Indonesian","Malay","Polish","Ukrainian","Greek","Hebrew","Persian"];
+let state = { file:null, isExcel:false, pages:0, target:null, sheetNames:false, output:null };
+
+// ---- Point this at your deployed backend from /starsa-backend ----
+const API_BASE_URL = "http://localhost:8080"; // e.g. https://api.starsa.app
+
+let LANGS = ["English","Hindi","Urdu","Arabic","Bengali","Marathi","Telugu","Tamil","Gujarati","Kannada","Malayalam","Punjabi","Spanish","French","German","Portuguese","Italian","Dutch","Russian","Chinese","Japanese","Korean","Turkish","Vietnamese","Thai","Indonesian","Malay","Polish","Ukrainian","Greek","Hebrew","Persian"];
+fetch(API_BASE_URL + "/api/languages").then(r=>r.json()).then(d=>{ if(d.languages && d.languages.length) LANGS = d.languages; }).catch(()=>{ /* backend not reachable yet — keep the built-in list */ });
+
+async function backendTranslateExcel(){
+  const fd = new FormData();
+  fd.append('file', state.file);
+  fd.append('targetLanguage', state.target);
+  fd.append('translateSheetNames', state.sheetNames ? 'true' : 'false');
+  const res = await fetch(API_BASE_URL + '/api/translate/excel', { method:'POST', body: fd });
+  if(!res.ok){ const e = await res.json().catch(()=>({error:'Translation failed.'})); throw new Error(e.error || 'Translation failed.'); }
+  return { blob: await res.blob(), ext: '.xlsx' };
+}
+async function backendTranslatePdf(){
+  const fd = new FormData();
+  fd.append('file', state.file);
+  fd.append('targetLanguage', state.target);
+  const res = await fetch(API_BASE_URL + '/api/translate/pdf', { method:'POST', body: fd });
+  if(!res.ok){ const e = await res.json().catch(()=>({error:'Translation failed.'})); throw new Error(e.error || 'Translation failed.'); }
+  return { blob: await res.blob(), ext: '.pdf' };
+}
+async function backendAnalyzePdf(){
+  const fd = new FormData(); fd.append('file', state.file);
+  const res = await fetch(API_BASE_URL + '/api/analyze/pdf', { method:'POST', body: fd });
+  if(!res.ok) throw new Error('Could not read this PDF.');
+  return res.json();
+}
+function showTranslateError(msg){
+  document.getElementById('procError').innerHTML=`<div class="warn-box">${msg}</div><div class="step-actions"><button class="btn btn-primary" id="retryBtn">Try again</button></div>`;
+  document.getElementById('procError').style.display='block';
+  document.getElementById('retryBtn').addEventListener('click',()=>{ document.getElementById('procError').style.display='none'; showPane(4); });
+}
+let history = [];
+try{ history = JSON.parse(localStorage.getItem('starsa_history')||'[]'); }catch(e){ history=[]; }
+
+function go(view){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+view).classList.add('active');
+  document.querySelectorAll('.navlinks a').forEach(a=>a.classList.toggle('active', a.dataset.go===view));
+  if(view==='dashboard') renderHistory();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.go)));
+document.querySelectorAll('[data-scroll]').forEach(el=>el.addEventListener('click',()=>{go('home'); setTimeout(()=>document.getElementById(el.dataset.scroll).scrollIntoView({behavior:'smooth'}),50);}));
+
+// theme
+const root=document.documentElement;
+document.getElementById('themeBtn').addEventListener('click',()=>{
+  const cur = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', cur==='dark' ? 'light' : 'dark');
+});
+
+// account modal / developer toggle
+const acctModal=document.getElementById('acctModal');
+document.getElementById('acctBtn').addEventListener('click',()=>acctModal.classList.add('show'));
+document.getElementById('closeModal').addEventListener('click',()=>acctModal.classList.remove('show'));
+document.getElementById('devToggle').addEventListener('change',e=>{
+  document.getElementById('devPill').style.display = e.target.checked ? 'inline-block' : 'none';
+});
+
+// STEP BAR
+function renderSteps(n){
+  const bar=document.getElementById('stepsBar'); bar.innerHTML='';
+  for(let i=1;i<=6;i++){ const el=document.createElement('i'); if(i<n) el.className='done'; if(i===n) el.className='now'; bar.appendChild(el); }
+}
+function showPane(n){
+  document.querySelectorAll('.step-pane').forEach(p=>p.style.display='none');
+  document.getElementById('pane-'+n).style.display='block';
+  renderSteps(n);
+}
+document.querySelectorAll('[data-back]').forEach(b=>b.addEventListener('click',()=>showPane(parseInt(b.dataset.back))));
+
+// STEP 1: upload
+const dropzone=document.getElementById('dropzone'), fileInput=document.getElementById('fileInput');
+document.getElementById('browseLink').addEventListener('click',()=>fileInput.click());
+dropzone.addEventListener('click',()=>fileInput.click());
+['dragover','dragenter'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault(); dropzone.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault(); dropzone.classList.remove('drag');}));
+dropzone.addEventListener('drop',e=>{ if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change',e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+async function handleFile(file){
+  const name=file.name.toLowerCase();
+  const errBox=document.getElementById('uploadError'); errBox.innerHTML='';
+  const isPdf=name.endsWith('.pdf'), isXlsx=name.endsWith('.xlsx')||name.endsWith('.xls');
+  if(!isPdf && !isXlsx){
+    errBox.innerHTML='<div class="warn-box">Unsupported file type. Please upload a PDF or Excel file.</div>'; return;
+  }
+  if(file.size > 50*1024*1024){
+    errBox.innerHTML='<div class="warn-box">File exceeds the allowed limit.</div>'; return;
+  }
+  state.file=file; state.isExcel=isXlsx;
+  if(isPdf){
+    document.getElementById('m-pages').textContent='Checking…';
+    showPane(2);
+    document.getElementById('m-name').textContent=file.name;
+    document.getElementById('m-type').textContent='PDF document';
+    document.getElementById('m-size').textContent=(file.size/1024/1024).toFixed(2)+' MB';
+    document.getElementById('m-lang').textContent='English (detected)';
+    document.getElementById('sheetNameRow').style.display='none';
+    try{
+      const info = await backendAnalyzePdf();
+      state.pages = info.pages;
+      finishAnalyze(info.eligible, info.maxPages);
+    }catch(e){
+      document.getElementById('analyzeWarn').innerHTML = `<div class="warn-box">Couldn't reach the translation backend at ${API_BASE_URL}. Make sure it's running (see starsa-backend/README.md) and reload.</div>`;
+      document.getElementById('m-pages').textContent='Unknown';
+      document.getElementById('toStep3').disabled=true;
+    }
+  } else {
+    state.pages = null; // exact sheet count is reported after processing for Excel
+    runAnalyzeExcel();
+  }
+}
+
+function finishAnalyze(eligible, maxPages){
+  document.getElementById('m-pages').textContent = state.pages+' pages';
+  const warn=document.getElementById('analyzeWarn'); warn.innerHTML='';
+  const toStep3Btn=document.getElementById('toStep3');
+  if(!eligible){
+    document.getElementById('m-eligible').textContent='Not eligible';
+    warn.innerHTML=`<div class="warn-box">This PDF contains ${state.pages} pages. The maximum allowed per translation is ${maxPages} pages. Please split the document and upload it in smaller parts.</div>`;
+    toStep3Btn.disabled=true;
+  } else {
+    document.getElementById('m-eligible').textContent='Eligible';
+    toStep3Btn.disabled=false;
+  }
+}
+
+function runAnalyzeExcel(){
+  document.getElementById('m-name').textContent=state.file.name;
+  document.getElementById('m-type').textContent='Excel workbook';
+  document.getElementById('m-pages').textContent='Detected on translate';
+  document.getElementById('m-size').textContent=(state.file.size/1024/1024).toFixed(2)+' MB';
+  document.getElementById('m-lang').textContent='English (detected)';
+  document.getElementById('m-eligible').textContent='Eligible';
+  document.getElementById('analyzeWarn').innerHTML='';
+  document.getElementById('sheetNameRow').style.display='flex';
+  document.getElementById('toStep3').disabled=false;
+  showPane(2);
+}
+document.getElementById('toStep3').addEventListener('click',()=>{ buildLangList(); showPane(3); });
+
+// STEP 3: language
+function buildLangList(filter=''){
+  const list=document.getElementById('langList'); list.innerHTML='';
+  LANGS.filter(l=>l.toLowerCase().includes(filter.toLowerCase())).forEach(l=>{
+    const d=document.createElement('div'); d.className='lang-opt'+(state.target===l?' selected':'');
+    d.innerHTML=`<span>${l}</span>`; d.addEventListener('click',()=>{ state.target=l; document.getElementById('tgtLangDisplay').textContent=l; document.getElementById('toStep4').disabled=false; buildLangList(document.getElementById('langSearch').value); });
+    list.appendChild(d);
+  });
+}
+document.getElementById('langSearch').addEventListener('input',e=>buildLangList(e.target.value));
+document.getElementById('toStep4').addEventListener('click',()=>{
+  state.sheetNames=document.getElementById('translateSheetNames').checked;
+  document.getElementById('confirmSummary').textContent = `${state.file.name} will be translated from English to ${state.target}, preserving original structure and layout.`;
+  document.getElementById('pageCountNote').textContent = state.isExcel ? 'Sheets and cells are detected automatically during translation' : `${state.pages} / 100 pages`;
+  showPane(4);
+});
+
+// STEP 5: processing — real request to your backend. We don't get true
+// percentage progress from a single fetch, so this eases toward ~90% while
+// waiting and only completes to 100% once the server actually responds.
+document.getElementById('startTranslate').addEventListener('click', async ()=>{
+  showPane(5);
+  document.getElementById('procError').style.display='none';
+  document.querySelectorAll('#taskList li').forEach(li=>li.classList.remove('done'));
+  let p=0;
+  const setProg=(v)=>{
+    p=v;
+    document.getElementById('progFill').style.width=p+'%';
+    document.getElementById('progPct').textContent=Math.round(p);
+    const idx=Math.min(5, Math.floor(p/17));
+    document.querySelectorAll('#taskList li').forEach((li,i)=>{ if(i<=idx) li.classList.add('done'); });
+  };
+  setProg(4);
+  const ticker=setInterval(()=>{ if(p<88) setProg(p + (88-p)*0.08); }, 400);
+  try{
+    const result = state.isExcel ? await backendTranslateExcel() : await backendTranslatePdf();
+    clearInterval(ticker); setProg(100);
+    state.output = result;
+    finishTranslate();
+  }catch(e){
+    clearInterval(ticker);
+    console.error(e);
+    showTranslateError(e.message || "Something went wrong while translating your file. Your original file has not been modified.");
+  }
+});
+
+function finishTranslate(){
+  const base = state.file.name.replace(/\.[^.]+$/,'');
+  const outName = `${base}_${state.target}${state.output.ext}`;
+  state.output.name = outName;
+  document.getElementById('origChip').textContent='Original: '+state.file.name;
+  document.getElementById('doneChip').textContent='Translated: '+outName;
+  const qwarn=document.getElementById('qualityWarn'); qwarn.innerHTML='';
+  if(!state.isExcel){
+    qwarn.innerHTML='<div class="warn-box">Text is translated and page order is preserved; exact original fonts, images and table layout are simplified in this rebuild.</div>';
+  }
+  const record={name:state.file.name,outName,type:state.isExcel?'Excel':'PDF',source:'English',target:state.target,units:state.isExcel?'workbook':state.pages+' pages',status:'Completed',date:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
+  history.unshift(record);
+  try{ localStorage.setItem('starsa_history', JSON.stringify(history)); }catch(e){}
+  showPane(6);
+}
+document.getElementById('previewBtn').addEventListener('click',()=>{
+  const url=URL.createObjectURL(state.output.blob);
+  window.open(url, '_blank');
+});
+document.getElementById('downloadBtn').addEventListener('click',()=>{
+  const {blob,name}=state.output;
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url);
+});
+document.getElementById('anotherBtn').addEventListener('click',()=>{
+  state={file:null,isExcel:false,pages:0,target:null,sheetNames:false};
+  fileInput.value=''; document.getElementById('toStep4').disabled=true; document.getElementById('tgtLangDisplay').textContent='Select language';
+  showPane(1);
+});
+
+// DASHBOARD
+function renderHistory(){
+  const body=document.getElementById('historyBody'); body.innerHTML='';
+  let pageSum=0;
+  history.forEach((r,i)=>{
+    pageSum += parseInt(r.units)||0;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.name}</td><td>${r.type}</td><td>${r.source}</td><td>${r.target}</td><td>${r.units}</td><td><span class="status-tag">${r.status}</span></td><td>${r.date}</td><td><span class="dlink" data-i="${i}">Download</span> &nbsp; <span class="delbtn" data-del="${i}">Remove</span></td>`;
+    body.appendChild(tr);
+  });
+  document.getElementById('s-count').textContent=history.length;
+  document.getElementById('s-pages').textContent=pageSum;
+  document.getElementById('s-files').textContent=history.length;
+  document.getElementById('s-remain').textContent=Math.max(0,100-pageSum%100);
+  body.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ history.splice(parseInt(b.dataset.del),1); try{localStorage.setItem('starsa_history',JSON.stringify(history));}catch(e){} renderHistory(); }));
+  body.querySelectorAll('[data-i]').forEach(b=>b.addEventListener('click',()=>alert('Downloading '+history[parseInt(b.dataset.i)].outName)));
+}
+showPane(1);
+renderHistory();
+</script>
+</body>
+</html>
